@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- ===== META / TITLE ===== -->
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Excel Side-by-Side Viewer v3.3.3-r12 (PWA)</title>
+
+  <!-- ===== PWA HOOKS (LOCAL FILES) ===== -->
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#0b1b2b" />
+  <link rel="icon" href="icon-192.png" />
+
+  <!-- ===== INLINE BASE STYLES ===== -->
+  <style>
+    :root{
+      --bg:#0b1b2b; --card:#0f1627; --muted:#9ca3af; --text:#e5e7eb;
+      --accent:#2563eb; --accent-2:#1e40af;
+      --ok:#86efac;      /* medium green (matched rows) */
+      --bad:#fecaca;     /* light red (unmatched rows)  */
+      --ok-tint:#86efac; /* top-pane tint in Matched mode */
+      --bad-tint:#fee2e2;/* top-pane tint in Unmatched    */
+      --all-tint:#ffffff;/* top-pane background in All    */
+      --border: rgba(255,255,255,.10);
+      --th: #0b1b2b;
+      --radius: 14px;
+      --shadow: 0 10px 30px rgba(0,0,0,.35);
+      --colw: 160px;   /* default column width */
+      --pane-h: 420px; /* ~20 rows visible */
+    }
+    * { box-sizing: border-box }
+    html,body{ height:100% }
+    body{
+      margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif;
+      color: var(--text);
+      background: linear-gradient(180deg, #0b1b2b 0%, #0f172a 100%);
+    }
+    .wrap{ max-width: 1200px; margin: 0 auto; padding: 22px }
+    header{ display: grid; grid-template-columns: 56px 1fr; gap: 14px; align-items: center; margin-bottom: 14px }
+    .logo{ width:56px; height:56px; border-radius:12px; background:url('icon-192.png') center/cover no-repeat; box-shadow:var(--shadow) }
+    h1{ margin:0; font-size: clamp(20px, 2.8vw, 28px) }
+    .subtitle{ color: var(--muted); margin-top: 2px }
+
+    .card{
+      background: rgba(17,24,39,.78);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 14px;
+      margin-bottom: 14px;
+      backdrop-filter: blur(6px);
+    }
+
+    /* ===== Toolbar ===== */
+    .toolbar{ display:flex; flex-wrap:wrap; gap:10px; align-items:center }
+    button{
+      appearance:none; border:1px solid var(--border);
+      background: linear-gradient(180deg,#1f2937,#111827);
+      color:#fff; padding:10px 14px; border-radius:12px; cursor:pointer; font-weight:600;
+      box-shadow: 0 4px 14px rgba(0,0,0,.25);
+    }
+    button.primary{ background: linear-gradient(180deg, var(--accent), var(--accent-2)); border-color:transparent }
+    button.toggle.on{ background: linear-gradient(180deg,#16a34a,#15803d); border-color:transparent }
+    button:disabled{ opacity:.6; cursor: not-allowed }
+    .viewBtn.active.match { background:#166534; }   /* green active */
+    .viewBtn.active.unmatch{ background:#7f1d1d; }  /* red active */
+    .viewBtn.active.all    { background:#334155; }  /* grey active */
+
+    .status{ display:grid; grid-template-columns:1fr 1fr; gap:12px; color:var(--muted); font-size:14px; margin-top:6px }
+    .colStatus div{ line-height:1.2 }
+    .badges{ display:flex; gap:10px; align-items:center; margin-top:4px }
+    .pill{ display:inline-flex; align-items:center; gap:6px; padding:2px 8px; border-radius:999px; font-weight:700 }
+    .pill.green{ background:var(--ok); color:#064e3b }
+    .pill.red  { background:var(--bad); color:#7f1d1d }
+    .dot{ width:8px; height:8px; border-radius:50% }
+    .dot.green{ background:#16a34a }
+    .dot.red  { background:#ef4444 }
+
+    /* ===== Top panes (true 50/50) ===== */
+    .split-container{ display:flex; gap:12px }
+    .pane{ flex:1 1 50%; min-width:0; display:flex; flex-direction:column; }
+    .pane h3{ margin: 6px 0; font-size: 16px; color:#cbd5e1 }
+    .tablewrap{
+      position:relative; border:1px solid var(--border); border-radius:12px;
+      height: var(--pane-h); overflow:auto; background:#0b1220; /* base */
+    }
+    /* tint top panes by mode */
+    .mode-matched .topA .tablewrap, .mode-matched .topB .tablewrap { background: var(--ok-tint) }
+    .mode-unmatched .topA .tablewrap, .mode-unmatched .topB .tablewrap { background: var(--bad-tint) }
+    .mode-all .topA .tablewrap, .mode-all .topB .tablewrap { background: var(--all-tint) }
+
+    /* Tables share locked widths via <colgroup> for perfect alignment */
+    table{ border-collapse: collapse; width:100%; table-layout: fixed; background:#ffffff }
+    col{ width: var(--colw) }
+    thead th{
+      position: sticky; top:0; z-index:1;
+      background: var(--th); color:#d1d5db; font-weight:700; text-align:left;
+      padding:8px; border-bottom:1px solid var(--border);
+      white-space: nowrap;
+    }
+    tbody td{
+      padding:6px 8px; border-bottom:1px dashed rgba(0,0,0,.08);
+      font-size: 14px; color:#111827; white-space: nowrap;
+    }
+
+    /* Row styles */
+    .row-match   td{ background: var(--ok);  color:#052e1a }
+    .row-unmatch td{ background: var(--bad); color:#111827 }
+
+    /* ===== Lower unmatched panes (always visible, side-by-side, scrollable) ===== */
+    .unmatch-container{ display:flex; gap:12px; }
+    .unmatch-container .tablewrap{ height: var(--pane-h); } /* same fixed window */
+
+    /* ===== Embedded README panel ===== */
+    #readmePanel.card{ margin-top: 0 }
+    #readmePanel .inner{
+      max-height: 300px; overflow:auto; background:#0b1220; border:1px solid var(--border);
+      border-radius:12px; padding:12px; white-space: pre-wrap; color:#e5e7eb;
+    }
+    #readmePanel .exitRow{ display:flex; justify-content:flex-end; margin-top:10px }
+    #btnReadmeExit{ background:#374151; }
+
+    /* ===== Spinner overlay ===== */
+    .spinner-overlay{
+      position:fixed; inset:0; background:rgba(2,6,23,.55); display:none; align-items:center; justify-content:center; z-index:9999;
+      backdrop-filter: blur(2px);
+    }
+    .spinner{
+      width:64px; height:64px; border-radius:50%;
+      border:6px solid rgba(255,255,255,.2); border-top-color:#fff;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin{ to{ transform: rotate(360deg) } }
+
+    .hidden{ display:none }
+    .muted{ color: var(--muted) }
+    .foot{ margin-top:10px; color: var(--muted); font-size:12px }
+  </style>
+</head>
+<body>
+  <div class="wrap" id="root">
+    <!-- ===== Header ===== -->
+    <header>
+      <div class="logo" aria-hidden="true"></div>
+      <div>
+        <h1>Excel Side-by-Side Viewer <span class="muted">v3.3.3-r12 (PWA)</span></h1>
+        <div class="subtitle">Load A & B • auto-compare (default key <strong>User ID</strong>) • search • sync-scroll • export to Excel • offline</div>
+      </div>
+    </header>
+
+    <!-- ===== Toolbar / Buttons ===== -->
+    <div class="card toolbar">
+      <!-- Hidden file inputs -->
+      <input id="fileA" type="file" accept=".xlsx,.xls" hidden />
+      <input id="fileB" type="file" accept=".xlsx,.xls" hidden />
+
+      <!-- File/load + controls -->
+      <button id="btnA">Load File A</button>
+      <button id="btnB">Load File B</button>
+
+      <!-- Key selector (auto-populates from File A) -->
+      <span class="muted" style="margin-left:6px">Key:</span>
+      <select id="keySelect" style="background:#0b1220;color:#fff;border:1px solid var(--border);border-radius:10px;padding:6px 10px">
+        <option>User ID</option>
+      </select>
+
+      <button id="btnCompare" class="primary">Compare</button>
+      <button id="btnSync" class="toggle on" title="Scroll A & B together">Sync Scroll: ON</button>
+
+      <!-- Top panes mode toggle (3-state) -->
+      <button id="btnShowMatched"   class="viewBtn match active">Matched</button>
+      <button id="btnShowUnmatched" class="viewBtn unmatch">Unmatched</button>
+      <button id="btnShowAll"       class="viewBtn all">All</button>
+
+      <!-- Search & README -->
+      <span style="flex:1 1 auto"></span>
+      <span class="searchbox">
+        <input id="search" type="search" placeholder="Search rows…" />
+        <button id="btnClear">Clear</button>
+      </span>
+      <button id="btnSave">Save Results (Excel)</button>
+      <button id="btnReadme">README</button>
+
+      <!-- Status lines with separate matched/unmatched counters under each file -->
+      <div class="status" style="flex-basis:100%">
+        <div class="colStatus">
+          <div>File A: <strong id="statusA">0 rows</strong></div>
+          <div class="badges">
+            <span class="pill green"><span class="dot green"></span>Matched: <span id="A_mat">0</span></span>
+            <span class="pill red"><span class="dot red"></span>Unmatched: <span id="A_unm">0</span></span>
+          </div>
+        </div>
+        <div class="colStatus">
+          <div>File B: <strong id="statusB">0 rows</strong></div>
+          <div class="badges">
+            <span class="pill green"><span class="dot green"></span>Matched: <span id="B_mat">0</span></span>
+            <span class="pill red"><span class="dot red"></span>Unmatched: <span id="B_unm">0</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Embedded README panel (hidden by default) ===== -->
+    <div id="readmePanel" class="card hidden">
+      <h3>README</h3>
+      <div id="readmeContent" class="inner">Loading…</div>
+      <div class="exitRow">
+        <button id="btnReadmeExit">Exit README</button>
+      </div>
+    </div>
+
+    <!-- ===== Top A/B panes (50/50, fixed height) ===== -->
+    <div class="card mode-matched" id="topModeCard">
+      <div class="split-container" id="rawRow">
+        <div class="pane topA">
+          <h3>Top Window — File A (<span id="topModeLabelA">Matched</span>)</h3>
+          <div class="tablewrap" id="twA">
+            <table id="tblA"><colgroup id="cgA"></colgroup><thead></thead><tbody></tbody></table>
+          </div>
+        </div>
+        <div class="pane topB">
+          <h3>Top Window — File B (<span id="topModeLabelB">Matched</span>)</h3>
+          <div class="tablewrap" id="twB">
+            <table id="tblB"><colgroup id="cgB"></colgroup><thead></thead><tbody></tbody></table>
+          </div>
+        </div>
+      </div>
+      <div class="foot muted">Top windows show <strong>Matched</strong>, <strong>Unmatched</strong>, or <strong>All</strong>. Sync is ON by default.</div>
+    </div>
+
+    <!-- ===== Lower Unmatched section — always visible, side-by-side, scrollable ===== -->
+    <div class="card">
+      <h3>Unmatched (Always Visible)</h3>
+      <div class="unmatch-container">
+        <div class="pane">
+          <h3>A Unmatched</h3>
+          <div class="tablewrap"><table><colgroup id="cgAO"></colgroup><thead id="thAO"></thead><tbody id="tbAO"></tbody></table></div>
+        </div>
+        <div class="pane">
+          <h3>B Unmatched</h3>
+          <div class="tablewrap"><table><colgroup id="cgBO"></colgroup><thead id="thBO"></thead><tbody id="tbBO"></tbody></table></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="foot">© Excel Side-by-Side Viewer — v3.3.3-r12 (PWA). Works offline after first load.</div>
+  </div>
+
+  <!-- ===== Spinner overlay ===== -->
+  <div class="spinner-overlay" id="spinner" aria-hidden="true"><div class="spinner"></div></div>
+
+  <!-- ===== XLSX parser (local, as on GitHub) ===== -->
+  <script src="xlsx.full.min.js"></script>
+
+  <!-- ===== OPTIONAL: your existing app.js ===== -->
+  <script src="app.js" defer></script>
+
+  <!-- ===== EMBEDDED README TEXT ===== -->
+  <script id="embeddedReadme" type="text/plain">
+Excel Side-by-Side Viewer — Quick Start (v3.3.3-r12)
+
+WHAT THIS DOES
+- Load two Excel files (A and B), compare by a chosen key (default “User ID”).
+- Top panes show File A | File B. Lower panes always show Unmatched A | Unmatched B.
+- Works offline as a PWA after the first load.
+
+BASIC STEPS
+1) Click “Load File A”, then “Load File B”.
+2) The key defaults to “User ID”. After File A loads, you can pick any column from the Key dropdown.
+3) Compare runs automatically when both files are loaded (or click Compare).
+
+VIEW MODES (Top Panes)
+- Matched: show matching records only (green).
+- Unmatched: show non-matching records only (red).
+- All: show both; matched rows green, unmatched red. Sorted A→Z by Last Name (fallback: compare key).
+
+COUNTS
+- Under each file: two counters — Matched (green) and Unmatched (red).
+
+SYNC SCROLL
+- “Sync Scroll: ON” keeps the top panes aligned vertically & horizontally. Toggle OFF for independent scrolling.
+
+SEARCH
+- Filters all visible panes live. “Clear” resets the filter.
+
+SAVE RESULTS (EXCEL)
+- “Save Results” downloads an Excel .xlsx with four tabs:
+  1) File A Matched
+  2) File B Matched
+  3) File A Unmatched
+  4) File B Unmatched
+
+NOTES
+- Columns align to the common set between A and B, ordered as in File A (key first).
+- If your compare key isn’t present in both files, select a different key.
+
+PWA / OFFLINE
+- Use your browser’s “Install App” / “Add to Home Screen” for quick access.
+  </script>
+
+  <!-- ===== CORE LOGIC ===== -->
+  <script>
+  (function(){
+    const $  = (s, r=document) => r.querySelector(s);
+    const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
+    const showSpinner = (on) => { $('#spinner').style.display = on ? 'flex' : 'none'; };
+
+    const state = {
+      key: 'User ID',
+      syncOn: true,
+      viewMode: 'matched',   // 'matched' | 'unmatched' | 'all'
+      headers: [],           // common headers only, order from File A
+      A: { rows: [] },
+      B: { rows: [] },
+      results: { aMatch: [], bMatch: [], aOnly: [], bOnly: [],
+                 matchedKeySet: new Set() }
+    };
+
+    /* ---------- README panel ---------- */
+    function initReadme(){
+      const txt = $('#embeddedReadme')?.textContent || 'No README embedded.';
+      $('#readmeContent').textContent = txt.trim();
+      const toggle = () => $('#readmePanel').classList.toggle('hidden');
+      $('#btnReadme').addEventListener('click', toggle);
+      $('#btnReadmeExit').addEventListener('click', () => {
+        $('#readmePanel').classList.add('hidden');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+    }
+
+    /* ---------- Status lines & counters ---------- */
+    function setStatus(){
+      $('#statusA').textContent = `${state.A.rows.length} rows`;
+      $('#statusB').textContent = `${state.B.rows.length} rows`;
+
+      const matchedCount = state.results.aMatch.length; // equals bMatch length
+      const aUnm = state.results.aOnly.length;
+      const bUnm = state.results.bOnly.length;
+
+      $('#A_mat').textContent = matchedCount;
+      $('#A_unm').textContent = aUnm;
+      $('#B_mat').textContent = matchedCount;
+      $('#B_unm').textContent = bUnm;
+    }
+
+    /* ---------- XLSX helpers ---------- */
+    function sheetToRows(wb){
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      return XLSX.utils.sheet_to_json(ws, { defval: "" });
+    }
+    async function readFile(file){
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          try{
+            const data = new Uint8Array(reader.result);
+            const wb = XLSX.read(data, { type:'array' });
+            resolve(sheetToRows(wb));
+          }catch(e){ reject(e); }
+        };
+        reader.onerror = () => reject(reader.error);
+        reader.readAsArrayBuffer(file);
+      });
+    }
+
+    /* ---------- Headers / Alignment ---------- */
+    function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
+
+    // common headers only, preserve File A order (key first)
+    function computeCommonHeaders(){
+      const keysA = new Set(); state.A.rows.forEach(r => Object.keys(r).forEach(k => keysA.add(k)));
+      const keysB = new Set(); state.B.rows.forEach(r => Object.keys(r).forEach(k => keysB.add(k)));
+      const common = [];
+      const seen = new Set();
+
+      for(const r of state.A.rows){
+        for(const k of Object.keys(r)){
+          if(!seen.has(k) && keysB.has(k)){ seen.add(k); common.push(k); }
+        }
+      }
+      const key = state.key;
+      const idx = common.indexOf(key);
+      if(idx > 0){ common.splice(idx,1); common.unshift(key); }
+
+      state.headers = common;
+    }
+
+    // populate Key select from File A (like r3)
+    function populateKeyDropdown(){
+      const select = $('#keySelect');
+      const seen = new Set();
+      const headersFromA = [];
+      state.A.rows.forEach(r => {
+        Object.keys(r).forEach(k => {
+          if(!seen.has(k)){ seen.add(k); headersFromA.push(k); }
+        });
+      });
+      if(headersFromA.length){
+        const current = state.key || 'User ID';
+        select.innerHTML = headersFromA.map(h => `<option${h===current?' selected':''}>${escapeHtml(h)}</option>`).join('');
+        if(!headersFromA.includes('User ID')){ state.key = select.value; } else { state.key = 'User ID'; select.value='User ID'; }
+      }
+    }
+
+    function setColGroup(colgroupEl, headers){
+      const cols = headers.map(() => `<col>`).join('');
+      colgroupEl.innerHTML = cols;
+    }
+
+    // renderTable supports rowClass OR rowClassFn(row)
+    function renderTable(tableEls, headers, rows, filterText='', rowClassOrFn=null){
+      const { thead, tbody, colgroup } = tableEls;
+      thead.innerHTML = `<tr>${headers.map(h=>`<th>${escapeHtml(h)}</th>`).join('')}</tr>`;
+      setColGroup(colgroup, headers);
+
+      const f = (filterText||'').trim().toLowerCase();
+      const out = [];
+      for(const r of rows){
+        const line = headers.map(h => r[h] ?? '').join(' ').toLowerCase();
+        if(!f || line.includes(f)){
+          const cls = typeof rowClassOrFn === 'function' ? (rowClassOrFn(r)||'') : (rowClassOrFn||'');
+          out.push(`<tr${cls?` class="${cls}"`:''}>${headers.map(h=>`<td>${escapeHtml(r[h] ?? '')}</td>`).join('')}</tr>`);
+        }
+      }
+      tbody.innerHTML = out.join('') || `<tr><td colspan="${headers.length}" class="muted">No rows</td></tr>`;
+    }
+
+    /* ---------- Helper: find "Last Name" header (variants) ---------- */
+    function detectLastNameHeader(){
+      const candidates = new Set(state.headers.map(h => (h||'').toString().trim().toLowerCase()));
+      const variants = ['last name','lastname','last_name','surname','family name','family_name'];
+      for(const v of variants){
+        if(candidates.has(v)) return state.headers.find(h => h.toString().trim().toLowerCase() === v);
+      }
+      return null;
+    }
+
+    /* ---------- Top panes renderer (Matched/Unmatched/All) ---------- */
+    function renderTopPanes(){
+      const headers = state.headers;
+      const search = $('#search').value;
+      const root = $('#topModeCard');
+      root.classList.remove('mode-matched','mode-unmatched','mode-all');
+
+      if(state.viewMode === 'matched'){
+        root.classList.add('mode-matched');
+        $('#topModeLabelA').textContent = 'Matched';
+        $('#topModeLabelB').textContent = 'Matched';
+
+        renderTable({ thead: $('#tblA thead'), tbody: $('#tblA tbody'), colgroup: $('#cgA') },
+                    headers, state.results.aMatch, search, 'row-match');
+        renderTable({ thead: $('#tblB thead'), tbody: $('#tblB tbody'), colgroup: $('#cgB') },
+                    headers, state.results.bMatch, search, 'row-match');
+
+      }else if(state.viewMode === 'unmatched'){
+        root.classList.add('mode-unmatched');
+        $('#topModeLabelA').textContent = 'Unmatched';
+        $('#topModeLabelB').textContent = 'Unmatched';
+
+        renderTable({ thead: $('#tblA thead'), tbody: $('#tblA tbody'), colgroup: $('#cgA') },
+                    headers, state.results.aOnly, search, 'row-unmatch');
+        renderTable({ thead: $('#tblB thead'), tbody: $('#tblB tbody'), colgroup: $('#cgB') },
+                    headers, state.results.bOnly, search, 'row-unmatch');
+
+      }else{ // ALL view: matched + unmatched, sorted A→Z by Last Name (fallback = key)
+        root.classList.add('mode-all');
+        $('#topModeLabelA').textContent = 'All';
+        $('#topModeLabelB').textContent = 'All';
+
+        const key = state.key;
+        const ln = detectLastNameHeader() || key;
+        const mset = state.results.matchedKeySet;
+
+        const rowsAAll = state.results.aMatch.concat(state.results.aOnly).slice();
+        const rowsBAll = state.results.bMatch.concat(state.results.bOnly).slice();
+
+        const cmp = (a,b) => {
+          const av = (a[ln] ?? '').toString().toLowerCase();
+          const bv = (b[ln] ?? '').toString().toLowerCase();
+          return av.localeCompare(bv, undefined, { numeric:false, sensitivity:'base' });
+        };
+        rowsAAll.sort(cmp);
+        rowsBAll.sort(cmp);
+
+        const rowClassFn = (r)=> mset.has(String(r[key] ?? '')) ? 'row-match' : 'row-unmatch';
+
+        renderTable({ thead: $('#tblA thead'), tbody: $('#tblA tbody'), colgroup: $('#cgA') },
+                    headers, rowsAAll, search, rowClassFn);
+        renderTable({ thead: $('#tblB thead'), tbody: $('#tblB tbody'), colgroup: $('#cgB') },
+                    headers, rowsBAll, search, rowClassFn);
+      }
+
+      setStatus();
+      reflectActiveViewButtons();
+    }
+
+    function reflectActiveViewButtons(){
+      const m = $('#btnShowMatched'), u = $('#btnShowUnmatched'), a = $('#btnShowAll');
+      [m,u,a].forEach(b => b.classList.remove('active'));
+      if(state.viewMode==='matched') m.classList.add('active');
+      else if(state.viewMode==='unmatched') u.classList.add('active');
+      else a.classList.add('active');
+    }
+
+    /* ---------- Lower unmatched panes ---------- */
+    function renderLowerUnmatched(){
+      const headers = state.headers;
+      const search = $('#search').value;
+
+      renderTable(
+        { thead: $('#thAO'), tbody: $('#tbAO'), colgroup: $('#cgAO') },
+        headers, state.results.aOnly, search, 'row-unmatch'
+      );
+      renderTable(
+        { thead: $('#thBO'), tbody: $('#tbBO'), colgroup: $('#cgBO') },
+        headers, state.results.bOnly, search, 'row-unmatch'
+      );
+    }
+
+    /* ---------- Compare ---------- */
+    function compare(){
+      const key = state.key;
+
+      const mapA = new Map(), mapB = new Map();
+      for(const r of state.A.rows){ mapA.set(String(r[key] ?? ''), r); }
+      for(const r of state.B.rows){ mapB.set(String(r[key] ?? ''), r); }
+
+      const aMatch=[], bMatch=[], aOnly=[], bOnly=[];
+      const matchedKeySet = new Set();
+
+      for(const [k, ra] of mapA.entries()){
+        if(mapB.has(k)){ aMatch.push(ra); bMatch.push(mapB.get(k)); matchedKeySet.add(k); }
+        else{ aOnly.push(ra); }
+      }
+      for(const [k, rb] of mapB.entries()){
+        if(!mapA.has(k)){ bOnly.push(rb); }
+      }
+
+      state.results = { aMatch, bMatch, aOnly, bOnly, matchedKeySet };
+
+      renderTopPanes();
+      renderLowerUnmatched();
+    }
+
+    /* ---------- Sync scroll (both axes) ---------- */
+    function wireSyncScroll(){
+      const a = $('#twA'), b = $('#twB');
+      let lock = false;
+      function link(from, to){
+        from.addEventListener('scroll', () => {
+          if(!state.syncOn || lock) return;
+          lock = true;
+          to.scrollTop  = from.scrollTop;
+          to.scrollLeft = from.scrollLeft;
+          lock = false;
+        });
+      }
+      link(a,b); link(b,a);
+    }
+
+    /* ---------- Save results (Excel with 4 sheets) ---------- */
+    function saveResultsXlsx(){
+      if(!window.XLSX){ alert('XLSX library not found. Ensure xlsx.full.min.js is present.'); return; }
+      const wb = XLSX.utils.book_new();
+
+      const headers = state.headers.slice(); // preserve order (File A, key first)
+
+      function rowsToSheet(rows){
+        // Make shallow copies projected to headers (preserving column order)
+        const out = rows.map(r => {
+          const o = {};
+          headers.forEach(h => { o[h] = r[h] ?? ''; });
+          return o;
+        });
+        const ws = XLSX.utils.json_to_sheet(out, { header: headers });
+        return ws;
+      }
+
+      // Sheets in the required order
+      const wsA_M = rowsToSheet(state.results.aMatch);
+      const wsB_M = rowsToSheet(state.results.bMatch);
+      const wsA_U = rowsToSheet(state.results.aOnly);
+      const wsB_U = rowsToSheet(state.results.bOnly);
+
+      XLSX.utils.book_append_sheet(wb, wsA_M, 'File A Matched');
+      XLSX.utils.book_append_sheet(wb, wsB_M, 'File B Matched');
+      XLSX.utils.book_append_sheet(wb, wsA_U, 'File A Unmatched');
+      XLSX.utils.book_append_sheet(wb, wsB_U, 'File B Unmatched');
+
+      const d = new Date();
+      const pad = n => String(n).padStart(2,'0');
+      const fname = `CompareResults_${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}.xlsx`;
+
+      // Triggers Save As… with suggested filename
+      XLSX.writeFile(wb, fname, { bookType:'xlsx', compression:true });
+    }
+
+    /* ---------- UI wiring ---------- */
+    window.addEventListener('DOMContentLoaded', () => {
+      initReadme();
+      wireSyncScroll();
+      setStatus();
+
+      // Buttons -> file inputs
+      $('#btnA').addEventListener('click', () => $('#fileA').click());
+      $('#btnB').addEventListener('click', () => $('#fileB').click());
+
+      // Key selection
+      $('#keySelect').addEventListener('change', e => {
+        state.key = e.target.value || 'User ID';
+        if(state.A.rows.length && state.B.rows.length){
+          showSpinner(true); setTimeout(()=>{ computeCommonHeaders(); compare(); showSpinner(false); }, 0);
+        }
+      });
+
+      // Load File A
+      $('#fileA').addEventListener('change', async e => {
+        const f = e.target.files[0]; if(!f) return;
+        showSpinner(true);
+        try{
+          state.A.rows = await readFile(f);
+          populateKeyDropdown(); // fill keys now that A is known
+          if(state.B.rows.length){ computeCommonHeaders(); }
+          setStatus();
+        }catch(err){ alert('Failed to read File A: ' + err.message); }
+        finally{ showSpinner(false); maybeAutoCompare(); }
+      });
+
+      // Load File B
+      $('#fileB').addEventListener('change', async e => {
+        const f = e.target.files[0]; if(!f) return;
+        showSpinner(true);
+        try{
+          state.B.rows = await readFile(f);
+          if(state.A.rows.length){ computeCommonHeaders(); }
+          setStatus();
+        }catch(err){ alert('Failed to read File B: ' + err.message); }
+        finally{ showSpinner(false); maybeAutoCompare(); }
+      });
+
+      function maybeAutoCompare(){
+        if(state.A.rows.length && state.B.rows.length){
+          computeCommonHeaders();
+          $('#btnCompare').disabled = false;
+          showSpinner(true); setTimeout(()=>{ compare(); showSpinner(false); }, 0);
+        }else{
+          $('#btnCompare').disabled = true;
+        }
+      }
+
+      // Manual compare
+      $('#btnCompare').addEventListener('click', () => {
+        if(!state.A.rows.length || !state.B.rows.length){ alert('Load both File A and File B first.'); return; }
+        computeCommonHeaders();
+        showSpinner(true); setTimeout(()=>{ compare(); showSpinner(false); }, 0);
+      });
+
+      // Sync toggle
+      $('#btnSync').addEventListener('click', () => {
+        state.syncOn = !state.syncOn;
+        const b = $('#btnSync');
+        b.classList.toggle('on', state.syncOn);
+        b.textContent = 'Sync Scroll: ' + (state.syncOn ? 'ON' : 'OFF');
+      });
+
+      // View mode toggles
+      $('#btnShowMatched').addEventListener('click', () => { state.viewMode='matched'; renderTopPanes(); });
+      $('#btnShowUnmatched').addEventListener('click', () => { state.viewMode='unmatched'; renderTopPanes(); });
+      $('#btnShowAll').addEventListener('click',       () => { state.viewMode='all';       renderTopPanes(); });
+
+      // Search filters
+      const applySearch = () => { renderTopPanes(); renderLowerUnmatched(); };
+      $('#search').addEventListener('input', applySearch);
+      $('#btnClear').addEventListener('click', () => { $('#search').value=''; applySearch(); });
+
+      // Save (Excel)
+      $('#btnSave').addEventListener('click', saveResultsXlsx);
+    });
+
+    /* ---------- Service Worker (GH Pages subpaths) ---------- */
+    if('serviceWorker' in navigator){
+      window.addEventListener('load', () => {
+        const base = location.pathname.endsWith('/') ? location.pathname : location.pathname.replace(/[^/]+$/,'');
+        navigator.serviceWorker.register(base + 'service-worker.js').catch(console.error);
+      });
+    }
+  })();
+  </script>
+</body>
+</html>
