@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Excel Side-by-Side Viewer v3.3.3-r4 (PWA)</title>
+
+  <!-- PWA hooks (local files in repo root) -->
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#0b1b2b" />
+  <link rel="icon" href="icon-192.png" />
+
+  <style>
+    :root{
+      --bg:#0f172a;        /* slate-900 */
+      --card:#111827;      /* gray-900 */
+      --muted:#9ca3af;     /* gray-400 */
+      --text:#e5e7eb;      /* gray-200 */
+      --accent:#2563eb;    /* blue-600 */
+      --accent-2:#1e40af;  /* blue-800 */
+      --ok:#22c55e;        /* green-500 */
+      --warn:#f59e0b;      /* amber-500 */
+      --danger:#ef4444;    /* red-500 */
+      --shadow: 0 10px 30px rgba(0,0,0,.35);
+      --radius: 14px;
+    }
+    html,body{height:100%}
+    body{
+      margin:0;background:linear-gradient(180deg,#0b1b2b 0%, #0f172a 100%);
+      color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;
+    }
+    .wrap{max-width:1200px;margin:0 auto;padding:24px}
+    header{
+      display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:center;margin-bottom:18px
+    }
+    header .logo{
+      width:56px;height:56px;border-radius:14px;background:#0b1b2b url('icon-192.png') center/cover no-repeat;
+      box-shadow: var(--shadow);
+    }
+    h1{margin:0;font-size:clamp(20px,3vw,28px);letter-spacing:.2px}
+    .subtitle{color:var(--muted);margin-top:4px}
+    .card{
+      background:rgba(17,24,39,.75);
+      border:1px solid rgba(255,255,255,.06);
+      border-radius:var(--radius);box-shadow:var(--shadow);
+      padding:16px;margin-bottom:16px;backdrop-filter: blur(6px);
+    }
+    .toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+    .toolbar .group{display:flex;gap:10px;flex-wrap:wrap}
+    button{
+      appearance:none;border:1px solid rgba(255,255,255,.12);
+      background:linear-gradient(180deg,#1f2937,#111827); color:#fff;
+      padding:10px 14px;border-radius:12px;cursor:pointer;font-weight:600;
+      box-shadow: 0 4px 14px rgba(0,0,0,.25);
+    }
+    button.primary{background:linear-gradient(180deg,var(--accent),var(--accent-2));border-color:transparent}
+    button.toggle.on{background:linear-gradient(180deg,#16a34a,#15803d);border-color:transparent}
+    button:disabled{opacity:.6;cursor:not-allowed}
+    input[type="file"]{display:none}
+    label.filebtn{display:inline-flex;align-items:center;gap:8px;cursor:pointer}
+    label.filebtn span{pointer-events:none}
+    .status{display:grid;grid-template-columns:1fr;gap:4px;color:var(--muted);font-size:14px;margin-top:8px}
+    .status strong{color:#fff}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .pane{display:flex;flex-direction:column;min-height:280px}
+    .pane h3{margin:8px 0 6px 0;font-size:16px;color:#cbd5e1}
+    .tablewrap{
+      position:relative;flex:1;overflow:auto;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:#0b1220;
+    }
+    table{border-collapse:collapse;width:100%;min-width:max-content}
+    thead th{
+      position:sticky;top:0;background:#0b1b2b;color:#d1d5db;
+      font-weight:700;text-align:left;padding:8px;border-bottom:1px solid rgba(255,255,255,.12)
+    }
+    tbody td{padding:6px 8px;border-bottom:1px dashed rgba(255,255,255,.06);font-size:14px;color:#e5e7eb;white-space:nowrap}
+    .tabs{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 10px}
+    .tabs button{font-size:13px;padding:8px 12px}
+    .tabs button.active{background:#334155}
+    .searchbox{display:flex;gap:10px;align-items:center;margin-top:8px}
+    .searchbox input{
+      width:280px;max-width:100%;padding:10px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.12);
+      background:#0b1220;color:#fff
+    }
+    .spinner-overlay{
+      position:fixed;inset:0;background:rgba(2,6,23,.55);display:none;align-items:center;justify-content:center;z-index:9999;
+      backdrop-filter: blur(2px);
+    }
+    .spinner{
+      width:64px;height:64px;border-radius:50%;
+      border:6px solid rgba(255,255,255,.2);border-top-color:#fff;animation:spin 1s linear infinite
+    }
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .muted{color:var(--muted)}
+    .foot{margin-top:10px;color:var(--muted);font-size:12px}
+    details.readme{margin-top:8px}
+    pre.readme{
+      white-space:pre-wrap;background:#0b1220;border:1px solid rgba(255,255,255,.08);
+      border-radius:12px;padding:12px;max-height:320px;overflow:auto;color:#e5e7eb
+    }
+    .keypick{
+      display:inline-flex;align-items:center;gap:8px;background:#0b1220;border:1px solid rgba(255,255,255,.12);
+      border-radius:12px;padding:6px 10px;margin-left:8px
+    }
+    select{background:transparent;color:#fff;border:none;outline:none}
+    .hidden{display:none}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="logo" aria-hidden="true"></div>
+      <div>
+        <h1>Excel Side-by-Side Viewer <span class="muted">v3.3.3-r4 (PWA)</span></h1>
+        <div class="subtitle">Load two Excel files, auto-compare on <strong>User ID</strong>, search, sync-scroll, and export results.</div>
+      </div>
+    </header>
+
+    <div class="card toolbar">
+      <div class="group">
+        <label class="filebtn">
+          <input id="fileA" type="file" accept=".xlsx,.xls" />
+          <button type="button">Load File A</button>
+        </label>
+        <label class="filebtn">
+          <input id="fileB" type="file" accept=".xlsx,.xls" />
+          <button type="button">Load File B</button>
+        </label>
+
+        <span class="keypick">
+          Key:
+          <select id="keySelect"><option>User ID</option></select>
+        </span>
+
+        <button id="btnCompare" class="primary">Compare</button>
+        <button id="btnSync" class="toggle on" title="Sync scroll on raw A/B viewers">Sync Scroll: ON</button>
+      </div>
+
+      <div class="group">
+        <div class="searchbox">
+          <input id="search" type="search" placeholder="Search rows…" />
+          <button id="btnClear">Clear</button>
+        </div>
+        <button id="btnSave">Save Results (timestamp)</button>
+        <button id="btnReadme">README</button>
+        <a id="dlReadme" download="README.txt" class="hidden"></a>
+      </div>
+
+      <div class="status" id="status">
+        <div>File A: <strong id="statusA">0 rows</strong></div>
+        <div>File B: <strong id="statusB">0 rows</strong></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row" id="rawRow">
+        <div class="pane">
+          <h3>Raw View — File A</h3>
+          <div class="tablewrap" id="twA"><table id="tblA"><thead></thead><tbody></tbody></table></div>
+        </div>
+        <div class="pane">
+          <h3>Raw View — File B</h3>
+          <div class="tablewrap" id="twB"><table id="tblB"><thead></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+      <div class="foot muted">Tip: scroll either raw table — with Sync ON, the other scrolls with it.</div>
+    </div>
+
+    <div class="card">
+      <div class="tabs">
+        <button class="tab active" data-tab="aMatch">Page 1: A Matches</button>
+        <button class="tab" data-tab="bMatch">Page 2: B Matches</button>
+        <button class="tab" data-tab="aOnly">Page 3: A Unmatched</button>
+        <button class="tab" data-tab="bOnly">Page 4: B Unmatched</button>
+      </div>
+
+      <div id="aMatch" class="pane"><div class="tablewrap"><table><thead id="thAM"></thead><tbody id="tbAM"></tbody></table></div></div>
+      <div id="bMatch" class="pane hidden"><div class="tablewrap"><table><thead id="thBM"></thead><tbody id="tbBM"></tbody></table></div></div>
+      <div id="aOnly"  class="pane hidden"><div class="tablewrap"><table><thead id="thAO"></thead><tbody id="tbAO"></tbody></table></div></div>
+      <div id="bOnly"  class="pane hidden"><div class="tablewrap"><table><thead id="thBO"></thead><tbody id="tbBO"></tbody></table></div></div>
+    </div>
+
+    <div class="card">
+      <details class="readme" id="readmeBox">
+        <summary><strong>README (click to open)</strong></summary>
+        <pre class="readme" id="readmeText">Loading…</pre>
+      </details>
+    </div>
+
+    <div class="foot">© Excel Side-by-Side Viewer — v3.3.3-r4 (PWA). Works offline after first load. </div>
+  </div>
+
+  <div class="spinner-overlay" id="spinner" aria-hidden="true"><div class="spinner"></div></div>
+
+  <!-- Local XLSX parser -->
+  <script src="xlsx.full.min.js"></script>
+
+  <!-- Optional: your existing app.js (won’t break if absent) -->
+  <script src="app.js" defer></script>
+
+  <script>
+  /***************
+   * Utilities
+   ***************/
+  const $ = (sel) => document.querySelector(sel);
+  const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+  const showSpinner = (on) => { const s = $('#spinner'); s.style.display = on ? 'flex' : 'none'; };
+
+  const state = {
+    key: 'User ID',
+    syncOn: true,
+    A: { rows: [], headers: [] },
+    B: { rows: [], headers: [] },
+    results: { aMatch: [], bMatch: [], aOnly: [], bOnly: [] },
+  };
+
+  function setStatus() {
+    $('#statusA').textContent = `${state.A.rows.length} rows`;
+    $('#statusB').textContent = `${state.B.rows.length} rows`;
+  }
+
+  function uniqueHeaders(rowsA, rowsB){
+    const set = new Set();
+    [rowsA, rowsB].forEach(rows => rows.forEach(r => Object.keys(r).forEach(k => set.add(k))));
+    // Ensure key first
+    const arr = Array.from(set);
+    arr.sort((a,b) => (a===state.key?-1:b===state.key?1:a.localeCompare(b)));
+    return arr;
+  }
+
+  function renderTable(tableEl, headers, rows, filterText=''){
+    const thead = tableEl.querySelector('thead');
+    const tbody = tableEl.querySelector('tbody');
+    thead.innerHTML = `<tr>${headers.map(h=>`<th>${escapeHtml(h)}</th>`).join('')}</tr>`;
+    const f = filterText.trim().toLowerCase();
+    const out = [];
+    for(const r of rows){
+      const line = headers.map(h => r[h] ?? '').join(' ');
+      if(!f || line.toLowerCase().includes(f)){
+        out.push(`<tr>${headers.map(h=>`<td>${escapeHtml(String(r[h] ?? ''))}</td>`).join('')}</tr>`);
+      }
+    }
+    tbody.innerHTML = out.join('') || `<tr><td class="muted" colspan="${headers.length}">No rows</td></tr>`;
+  }
+
+  function escapeHtml(s){return s.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));}
+
+  function sheetToRows(wb){
+    const sheetName = wb.SheetNames[0];
+    const ws = wb.Sheets[sheetName];
+    return XLSX.utils.sheet_to_json(ws, { defval: "" });
+  }
+
+  async function readFile(file){
+    return new Promise((resolve,reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        try{
+          const data = new Uint8Array(reader.result);
+          const wb = XLSX.read(data, { type:'array' });
+          resolve(sheetToRows(wb));
+        }catch(e){ reject(e); }
+      };
+      reader.onerror = () => reject(reader.error);
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  function renderRaw(){
+    const hdrs = uniqueHeaders(state.A.rows, state.B.rows);
+    state.A.headers = hdrs; state.B.headers = hdrs;
+    renderTable($('#tblA'), hdrs, state.A.rows, $('#search').value);
+    renderTable($('#tblB'), hdrs, state.B.rows, $('#search').value);
+    populateKeyPicker(hdrs);
+  }
+
+  function populateKeyPicker(headers){
+    const sel = $('#keySelect');
+    const cur = state.key;
+    sel.innerHTML = headers.map(h => `<option${h===cur?' selected':''}>${escapeHtml(h)}</option>`).join('');
+  }
+
+  function compare(){
+    const key = state.key;
+    const mapA = new Map();
+    const mapB = new Map();
+    for(const r of state.A.rows){ mapA.set(String(r[key] ?? ''), r); }
+    for(const r of state.B.rows){ mapB.set(String(r[key] ?? ''), r); }
+
+    const aMatch=[], bMatch=[], aOnly=[], bOnly=[];
+    // Matches and A-only
+    for(const [k,ra] of mapA.entries()){
+      if(mapB.has(k)){ aMatch.push(ra); bMatch.push(mapB.get(k)); }
+      else{ aOnly.push(ra); }
+    }
+    // B-only
+    for(const [k,rb] of mapB.entries()){
+      if(!mapA.has(k)){ bOnly.push(rb); }
+    }
+
+    state.results = { aMatch, bMatch, aOnly, bOnly };
+    renderResults();
+  }
+
+  function renderResults(){
+    const hdrs = uniqueHeaders(state.A.rows, state.B.rows);
+
+    renderTable($('#aMatch table'), hdrs, state.results.aMatch, $('#search').value);
+    renderTable($('#bMatch table'), hdrs, state.results.bMatch, $('#search').value);
+    renderTable($('#aOnly  table'), hdrs, state.results.aOnly,  $('#search').value);
+    renderTable($('#bOnly  table'), hdrs, state.results.bOnly,  $('#search').value);
+
+    // also update heads for results panes
+    $('#thAM').innerHTML = `<tr>${hdrs.map(h=>`<th>${escapeHtml(h)}</th>`).join('')}</tr>`;
+    $('#thBM').innerHTML = `<tr>${hdrs.map(h=>`<th>${escapeHtml(h)}</th>`).join('')}</tr>`;
+    $('#thAO').innerHTML = `<tr>${hdrs.map(h=>`<th>${escapeHtml(h)}</th>`).join('')}</tr>`;
+    $('#thBO').innerHTML = `<tr>${hdrs.map(h=>`<th>${escapeHtml(h)}</th>`).join('')}</tr>`;
+  }
+
+  function wireSyncScroll(){
+    const a = $('#twA'), b = $('#twB');
+    let lock = false;
+    function link(from, to){
+      from.addEventListener('scroll', () => {
+        if(!state.syncOn || lock) return;
+        lock = true;
+        to.scrollTop = from.scrollTop;
+        to.scrollLeft = from.scrollLeft;
+        lock = false;
+      });
+    }
+    link(a,b); link(b,a);
+  }
+
+  function switchTab(id){
+    $$('.tabs .tab').forEach(btn => btn.classList.toggle('active', btn.dataset.tab===id));
+    ['aMatch','bMatch','aOnly','bOnly'].forEach(x => {
+      const el = document.getElementById(x);
+      el.classList.toggle('hidden', x !== id);
+    });
+  }
+
+  function saveResults(){
+    const ts = new Date();
+    const pad = (n)=> String(n).padStart(2,'0');
+    const name = `compare_${ts.getFullYear()}-${pad(ts.getMonth()+1)}-${pad(ts.getDate())}_${pad(ts.getHours())}-${pad(ts.getMinutes())}-${pad(ts.getSeconds())}.html`;
+
+    // Build a minimal, portable HTML with results only
+    const resultsHtml = `
+<!doctype html><html lang="en"><meta charset="utf-8">
+<title>Compare Results ${escapeHtml(name)}</title>
+<style>
+  body{font-family:Arial,Helvetica,sans-serif;background:#0b1220;color:#e5e7eb;margin:16px}
+  h2{margin:16px 0 6px}
+  table{border-collapse:collapse;width:100%;min-width:max-content}
+  th,td{border:1px solid #334155;padding:6px 8px}
+  th{background:#0b1b2b}
+</style>
+<body>
+  <h1>Compare Results — ${escapeHtml(name)}</h1>
+  <p>Key: <strong>${escapeHtml(state.key)}</strong></p>
+  ${sectionHtml('Page 1: A Matches', '#aMatch table')}
+  ${sectionHtml('Page 2: B Matches', '#bMatch table')}
+  ${sectionHtml('Page 3: A Unmatched', '#aOnly table')}
+  ${sectionHtml('Page 4: B Unmatched', '#bOnly table')}
+</body></html>`;
+
+    const blob = new Blob([resultsHtml], {type:'text/html'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(a.href);
+
+    function sectionHtml(title, sel){
+      const tbl = document.querySelector(sel).cloneNode(true);
+      return `<h2>${escapeHtml(title)}</h2>${tbl.outerHTML}`;
+    }
+  }
+
+  async function loadReadme(){
+    try{
+      const res = await fetch('README.txt');
+      const txt = await res.text();
+      $('#readmeText').textContent = txt;
+      // allow download via hidden anchor
+      const blob = new Blob([txt], {type:'text/plain'});
+      const url = URL.createObjectURL(blob);
+      const dl = $('#dlReadme');
+      dl.href = url; dl.download = 'README.txt';
+    }catch(e){
+      $('#readmeText').textContent = 'README.txt not found in repository.';
+    }
+  }
+
+  /***************
+   * Event wiring
+   ***************/
+  window.addEventListener('DOMContentLoaded', () => {
+    // Spinner on global async tasks
+    wireSyncScroll();
+    setStatus();
+    loadReadme();
+
+    $('#keySelect').addEventListener('change', e => {
+      state.key = e.target.value || 'User ID';
+      if(state.A.rows.length && state.B.rows.length){
+        compare(); // re-run with new key
+      }
+    });
+
+    // File inputs
+    $('#fileA').addEventListener('change', async (e) => {
+      if(!e.target.files[0]) return;
+      showSpinner(true);
+      try{
+        state.A.rows = await readFile(e.target.files[0]);
+        renderRaw(); setStatus();
+      }catch(err){ alert('Failed to read File A: ' + err.message); }
+      finally{
+        showSpinner(false);
+        maybeAutoCompare();
+      }
+    });
+
+    $('#fileB').addEventListener('change', async (e) => {
+      if(!e.target.files[0]) return;
+      showSpinner(true);
+      try{
+        state.B.rows = await readFile(e.target.files[0]);
+        renderRaw(); setStatus();
+      }catch(err){ alert('Failed to read File B: ' + err.message); }
+      finally{
+        showSpinner(false);
+        maybeAutoCompare();
+      }
+    });
+
+    function maybeAutoCompare(){
+      if(state.A.rows.length && state.B.rows.length){
+        // Auto-compare (default behavior)
+        $('#btnCompare').disabled = false;
+        showSpinner(true);
+        setTimeout(()=>{ compare(); showSpinner(false); }, 0);
+      }else{
+        $('#btnCompare').disabled = true;
+      }
+    }
+
+    // Manual compare button
+    $('#btnCompare').addEventListener('click', () => {
+      if(!state.A.rows.length || !state.B.rows.length){
+        alert('Load both File A and File B first.'); return;
+      }
+      showSpinner(true); setTimeout(()=>{ compare(); showSpinner(false); }, 0);
+    });
+
+    // Sync toggle
+    $('#btnSync').addEventListener('click', () => {
+      state.syncOn = !state.syncOn;
+      const b = $('#btnSync');
+      b.classList.toggle('on', state.syncOn);
+      b.textContent = 'Sync Scroll: ' + (state.syncOn ? 'ON' : 'OFF');
+    });
+
+    // Tabs
+    $$('.tabs .tab').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
+
+    // Search
+    const applySearch = () => {
+      renderRaw();
+      renderResults();
+    };
+    $('#search').addEventListener('input', applySearch);
+    $('#btnClear').addEventListener('click', () => { $('#search').value=''; applySearch(); });
+
+    // Save results
+    $('#btnSave').addEventListener('click', saveResults);
+
+    // README panel and download
+    $('#btnReadme').addEventListener('click', () => {
+      const box = $('#readmeBox');
+      box.open = !box.open;
+      if(box.open){ box.scrollIntoView({behavior:'smooth',block:'center'}); }
+      // trigger the hidden anchor (so user can download quickly)
+      const dl = $('#dlReadme'); if(dl.href) dl.click();
+    });
+
+    // Default active tab
+    switchTab('aMatch');
+  });
+
+  /***************
+   * Service Worker registration (relative-safe on GH Pages)
+   ***************/
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', () => {
+      // Resolve for /<repo>/ paths too
+      const base = location.pathname.endsWith('/') ? location.pathname : location.pathname.replace(/[^/]+$/, '');
+      navigator.serviceWorker.register(base + 'service-worker.js').catch(console.error);
+    });
+  }
+  </script>
+</body>
+</html>
